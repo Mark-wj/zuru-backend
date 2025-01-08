@@ -1,0 +1,41 @@
+# Python Bytecode
+__pycache__/
+*.pyc
+*.pyo
+
+# Pipenv virtual environment
+.venv/
+
+# Pipenv cache
+.pipenv/
+
+# Database
+db.sqlite3
+
+# Static and Media Files
+/static/
+/media/
+
+# Django Secret Key
+.env
+
+# Django Migrations
+*/migrations/*
+
+# IDE and Editor Files
+.idea/
+.vscode/
+*.swp
+
+# Docker Files (if any)
+.docker/
+docker-compose.override.yml
+
+# Test and Coverage Files
+.tox/
+.coverage
+.pytest_cache/
+
+# Other Django Configurations
+local_settings.py
+*.log
