@@ -1,101 +1,88 @@
-from rest_framework import status
-from rest_framework.response import Response
+from django.contrib.auth.models import User
 from rest_framework.views import APIView
-from .models import User, Category, Destination, Service, Booking, Review, Activity, Payment
+from rest_framework.response import Response
+from rest_framework import status, generics
+from rest_framework.permissions import IsAuthenticated, AllowAny, IsAdminUser
+from rest_framework.exceptions import PermissionDenied
+from .models import *
 from .serializers import (
-    UserSerializer, 
-    CategorySerializer, 
-    DestinationSerializer, 
-    ServiceSerializer, 
-    BookingSerializer, 
-    ReviewSerializer, 
-    ActivitySerializer, 
-    PaymentSerializer
+    ActivitySerializer,
+    DestinationSerializer,
+    ServiceSerializer,
+    UserSerializer,
+    UserProfileSerializer,
+    BookingSerializer,
 )
 
-# User views
-class UserListCreateAPIView(APIView):
+# User registration view
+class CreateUserView(generics.CreateAPIView):
+    queryset = User.objects.all()
+    serializer_class = UserSerializer
+    permission_classes = [AllowAny]
+
+# UserProfile views
+class UserProfileListCreateAPIView(APIView):
+    """
+    Handles listing all user profiles (admin only) and creating profiles for authenticated users.
+    """
+    permission_classes = [IsAuthenticated]
+
     def get(self, request):
-        users = User.objects.all()
-        serializer = UserSerializer(users, many=True)
+        if not request.user.is_staff:
+            raise PermissionDenied("Only admins can view all user profiles.")
+        profiles = UserProfile.objects.all()
+        serializer = UserProfileSerializer(profiles, many=True)
         return Response(serializer.data)
 
     def post(self, request):
-        serializer = UserSerializer(data=request.data)
+        serializer = UserProfileSerializer(data=request.data)
         if serializer.is_valid():
-            serializer.save()
+            serializer.save(user=request.user)  # Associate with the logged-in user
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-class UserRetrieveUpdateDestroyAPIView(APIView):
-    def get(self, request, pk):
+
+class UserProfileRetrieveUpdateDestroyAPIView(APIView):
+    """
+    Handles retrieving, updating, and deleting a specific user profile.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get_object(self, pk, request):
         try:
-            user = User.objects.get(pk=pk)
-        except User.DoesNotExist:
+            profile = UserProfile.objects.get(pk=pk)
+            if not request.user.is_staff and profile.user != request.user:
+                raise PermissionDenied("You do not have permission to access this profile.")
+            return profile
+        except UserProfile.DoesNotExist:
+            return None
+
+    def get(self, request, pk):
+        profile = self.get_object(pk, request)
+        if profile is None:
             return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
-        serializer = UserSerializer(user)
+        serializer = UserProfileSerializer(profile)
         return Response(serializer.data)
 
     def put(self, request, pk):
-        try:
-            user = User.objects.get(pk=pk)
-        except User.DoesNotExist:
+        profile = self.get_object(pk, request)
+        if profile is None:
             return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
-        serializer = UserSerializer(user, data=request.data)
+        serializer = UserProfileSerializer(profile, data=request.data)
         if serializer.is_valid():
             serializer.save()
             return Response(serializer.data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     def delete(self, request, pk):
-        try:
-            user = User.objects.get(pk=pk)
-        except User.DoesNotExist:
+        profile = self.get_object(pk, request)
+        if profile is None:
             return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
-        user.delete()
+        if not request.user.is_staff:
+            raise PermissionDenied("Only admins can delete profiles.")
+        profile.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
-# Category views
-class CategoryListCreateAPIView(APIView):
-    def get(self, request):
-        categories = Category.objects.all()
-        serializer = CategorySerializer(categories, many=True)
-        return Response(serializer.data)
-
-    def post(self, request):
-        serializer = CategorySerializer(data=request.data)
-        if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-class CategoryRetrieveUpdateDestroyAPIView(APIView):
-    def get(self, request, pk):
-        try:
-            category = Category.objects.get(pk=pk)
-        except Category.DoesNotExist:
-            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
-        serializer = CategorySerializer(category)
-        return Response(serializer.data)
-
-    def put(self, request, pk):
-        try:
-            category = Category.objects.get(pk=pk)
-        except Category.DoesNotExist:
-            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
-        serializer = CategorySerializer(category, data=request.data)
-        if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-    def delete(self, request, pk):
-        try:
-            category = Category.objects.get(pk=pk)
-        except Category.DoesNotExist:
-            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
-        category.delete()
-        return Response(status=status.HTTP_204_NO_CONTENT)
 
 # Destination views
 class DestinationListCreateAPIView(APIView):
@@ -110,6 +97,7 @@ class DestinationListCreateAPIView(APIView):
             serializer.save()
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
 
 class DestinationRetrieveUpdateDestroyAPIView(APIView):
     def get(self, request, pk):
@@ -153,6 +141,7 @@ class ServiceListCreateAPIView(APIView):
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+
 class ServiceRetrieveUpdateDestroyAPIView(APIView):
     def get(self, request, pk):
         try:
@@ -181,89 +170,6 @@ class ServiceRetrieveUpdateDestroyAPIView(APIView):
         service.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
-# Booking views
-class BookingListCreateAPIView(APIView):
-    def get(self, request):
-        bookings = Booking.objects.all()
-        serializer = BookingSerializer(bookings, many=True)
-        return Response(serializer.data)
-
-    def post(self, request):
-        serializer = BookingSerializer(data=request.data)
-        if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-class BookingRetrieveUpdateDestroyAPIView(APIView):
-    def get(self, request, pk):
-        try:
-            booking = Booking.objects.get(pk=pk)
-        except Booking.DoesNotExist:
-            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
-        serializer = BookingSerializer(booking)
-        return Response(serializer.data)
-
-    def put(self, request, pk):
-        try:
-            booking = Booking.objects.get(pk=pk)
-        except Booking.DoesNotExist:
-            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
-        serializer = BookingSerializer(booking, data=request.data)
-        if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-    def delete(self, request, pk):
-        try:
-            booking = Booking.objects.get(pk=pk)
-        except Booking.DoesNotExist:
-            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
-        booking.delete()
-        return Response(status=status.HTTP_204_NO_CONTENT)
-
-# Review views
-class ReviewListCreateAPIView(APIView):
-    def get(self, request):
-        reviews = Review.objects.all()
-        serializer = ReviewSerializer(reviews, many=True)
-        return Response(serializer.data)
-
-    def post(self, request):
-        serializer = ReviewSerializer(data=request.data)
-        if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-class ReviewRetrieveUpdateDestroyAPIView(APIView):
-    def get(self, request, pk):
-        try:
-            review = Review.objects.get(pk=pk)
-        except Review.DoesNotExist:
-            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
-        serializer = ReviewSerializer(review)
-        return Response(serializer.data)
-
-    def put(self, request, pk):
-        try:
-            review = Review.objects.get(pk=pk)
-        except Review.DoesNotExist:
-            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
-        serializer = ReviewSerializer(review, data=request.data)
-        if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-    def delete(self, request, pk):
-        try:
-            review = Review.objects.get(pk=pk)
-        except Review.DoesNotExist:
-            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
-        review.delete()
-        return Response(status=status.HTTP_204_NO_CONTENT)
 
 # Activity views
 class ActivityListCreateAPIView(APIView):
@@ -278,6 +184,7 @@ class ActivityListCreateAPIView(APIView):
             serializer.save()
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
 
 class ActivityRetrieveUpdateDestroyAPIView(APIView):
     def get(self, request, pk):
@@ -307,35 +214,38 @@ class ActivityRetrieveUpdateDestroyAPIView(APIView):
         activity.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
-# Payment views
-class PaymentListCreateAPIView(APIView):
+class BookingListCreateAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
     def get(self, request):
-        payments = Payment.objects.all()
-        serializer = PaymentSerializer(payments, many=True)
+        bookings = Booking.objects.filter(user=request.user)
+        serializer = BookingSerializer(bookings, many=True)
         return Response(serializer.data)
 
     def post(self, request):
-        serializer = PaymentSerializer(data=request.data)
+        serializer = BookingSerializer(data=request.data)
         if serializer.is_valid():
-            serializer.save()
+            serializer.save(user=request.user)
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-class PaymentRetrieveUpdateDestroyAPIView(APIView):
+class BookingRetrieveUpdateDestroyAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
     def get(self, request, pk):
         try:
-            payment = Payment.objects.get(pk=pk)
-        except Payment.DoesNotExist:
+            booking = Booking.objects.get(pk=pk, user=request.user)
+        except Booking.DoesNotExist:
             return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
-        serializer = PaymentSerializer(payment)
+        serializer = BookingSerializer(booking)
         return Response(serializer.data)
 
     def put(self, request, pk):
         try:
-            payment = Payment.objects.get(pk=pk)
-        except Payment.DoesNotExist:
+            booking = Booking.objects.get(pk=pk, user=request.user)
+        except Booking.DoesNotExist:
             return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
-        serializer = PaymentSerializer(payment, data=request.data)
+        serializer = BookingSerializer(booking, data=request.data)
         if serializer.is_valid():
             serializer.save()
             return Response(serializer.data)
@@ -343,8 +253,8 @@ class PaymentRetrieveUpdateDestroyAPIView(APIView):
 
     def delete(self, request, pk):
         try:
-            payment = Payment.objects.get(pk=pk)
-        except Payment.DoesNotExist:
+            booking = Booking.objects.get(pk=pk, user=request.user)
+        except Booking.DoesNotExist:
             return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
-        payment.delete()
+        booking.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
